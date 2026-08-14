@@ -1,0 +1,1769 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GitHeartbeat — Developer Matchmaking</title>
+<meta name="description" content="A members-only compatibility reading for two GitHub profiles. Enter two usernames and receive a fully itemised match dossier.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Chart.js Library for Advanced Graphs -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- jsPDF for the multi-page "Love Letter" PDF export (real PDF, not a screenshot) -->
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+<style>
+  :root{
+    --bg:#070709;
+    --bg-2:#111113;
+    --panel:rgba(255,255,255,0.035);
+    --panel-solid:#141416;
+    --border:rgba(255,255,255,0.09);
+    --border-strong:rgba(201,162,75,0.35);
+    --ink:#f2ede2;
+    --muted:#948d80;
+    --muted-2:#5f5a52;
+    --gold:#c9a24b;
+    --gold-bright:#e6c476;
+    --emerald:#3f9d78;
+    --cyan:#38bdf8;
+    --wine:#a3495a;
+    --serif:'Fraunces', Georgia, serif;
+    --sans:'Inter', -apple-system, sans-serif;
+    --mono:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0; min-height:100vh; font-family:var(--sans); color:var(--ink);
+    background:
+      radial-gradient(ellipse 900px 500px at 50% -10%, rgba(201,162,75,0.12), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 30%, rgba(63,157,120,0.08), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 0% 70%, rgba(56,189,248,0.06), transparent 60%),
+      var(--bg);
+    -webkit-font-smoothing:antialiased;
+  }
+  :focus-visible{outline:1.5px solid var(--gold-bright); outline-offset:3px;}
+  ::selection{background:rgba(201,162,75,0.3);}
+
+  .wrap{max-width:1100px; margin:0 auto; padding:56px 24px 100px;}
+
+  /* Masthead */
+  .masthead{text-align:center; margin-bottom:52px;}
+  .eyebrow{
+    font-family:var(--mono); font-size:11px; letter-spacing:.22em; text-transform:uppercase;
+    color:var(--gold); margin:0 0 18px; display:flex; align-items:center; justify-content:center; gap:12px;
+  }
+  .eyebrow::before, .eyebrow::after{content:''; height:1px; width:32px; background:linear-gradient(90deg, transparent, var(--gold), transparent);}
+  h1{
+    font-family:var(--serif); font-optical-sizing:auto; font-weight:600;
+    font-size:clamp(34px, 6vw, 58px); line-height:1.08; letter-spacing:-0.01em;
+    margin:0 0 18px;
+  }
+  h1 em{font-style:italic; color:var(--gold-bright); font-weight:500;}
+  .masthead p{
+    color:var(--muted); font-size:16px; line-height:1.7; max-width:48ch; margin:0 auto;
+  }
+
+  /* Panel */
+  .panel{
+    background:var(--panel); border:1px solid var(--border); border-radius:18px;
+    backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+    padding:40px; position:relative;
+    box-shadow:0 40px 100px -40px rgba(0,0,0,0.8);
+  }
+  .panel::before{
+    content:''; position:absolute; inset:0; border-radius:18px; padding:1px;
+    background:linear-gradient(160deg, rgba(201,162,75,0.35), transparent 40%);
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude; pointer-events:none;
+  }
+  @media (max-width:640px){ .panel{padding:26px 20px;} }
+
+  .devs{
+    display:grid; grid-template-columns:1fr auto 1fr; gap:24px; align-items:end;
+  }
+  @media (max-width:640px){ .devs{grid-template-columns:1fr;} }
+
+  .field{position:relative;}
+  .field label{
+    display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--muted-2); margin-bottom:10px;
+  }
+  .field .inputrow{display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--border); padding-bottom:10px; transition:border-color .2s;}
+  .field .inputrow:focus-within{border-bottom-color:var(--gold);}
+  .field .at{font-family:var(--serif); font-style:italic; color:var(--muted); font-size:19px;}
+  .field input{
+    flex:1; min-width:0; background:transparent; border:none; color:var(--ink);
+    font-family:var(--serif); font-size:19px; padding:2px 0;
+  }
+  .field input::placeholder{color:var(--muted-2);}
+  .field input:focus{outline:none;}
+
+  .suggest{
+    position:absolute; top:calc(100% + 8px); left:0; right:0; z-index:20;
+    background:#17171a; border:1px solid var(--border-strong); border-radius:12px;
+    box-shadow:0 24px 60px -20px rgba(0,0,0,0.8);
+    overflow:hidden; display:none;
+  }
+  .suggest.show{display:block;}
+  .suggest-item{
+    display:flex; align-items:center; gap:10px; padding:9px 14px;
+    cursor:pointer; border-bottom:1px solid var(--border);
+  }
+  .suggest-item:last-child{border-bottom:none;}
+  .suggest-item:hover, .suggest-item.active{background:rgba(201,162,75,0.10);}
+  .suggest-item img{width:24px; height:24px; border-radius:50%; flex-shrink:0;}
+  .suggest-item .sname{font-family:var(--mono); font-size:13px; color:var(--ink);}
+  .suggest-item .stype{font-family:var(--mono); font-size:9.5px; color:var(--muted-2); margin-left:auto; text-transform:uppercase; letter-spacing:.06em;}
+  .suggest-empty{padding:12px 14px; font-family:var(--mono); font-size:12px; color:var(--muted-2);}
+
+  .join{
+    font-family:var(--serif); font-style:italic; color:var(--gold);
+    font-size:20px; text-align:center; padding-bottom:10px;
+  }
+  @media (max-width:640px){ .join{padding:4px 0;} }
+
+  .cta-row{display:flex; justify-content:center; margin-top:36px;}
+  .cta{
+    font-family:var(--mono); font-size:12.5px; letter-spacing:.1em; text-transform:uppercase;
+    font-weight:600; color:#1a1508; background:linear-gradient(135deg, var(--gold-bright), var(--gold));
+    border:none; border-radius:999px; padding:16px 34px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:10px;
+    transition:transform .2s ease, box-shadow .2s ease;
+  }
+  .cta:hover{transform:translateY(-2px); box-shadow:0 14px 32px -12px rgba(201,162,75,0.55);}
+  .cta:active{transform:translateY(0);}
+  .cta:disabled{opacity:.55; cursor:progress; transform:none; box-shadow:none;}
+
+  .hint{text-align:center; font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; color:var(--muted-2); margin-top:16px;}
+
+  .errbox{
+    margin-top:20px; padding:14px 16px; border-radius:10px;
+    background:rgba(163,73,90,0.12); border:1px solid rgba(163,73,90,0.4); color:#e8b5bd;
+    font-family:var(--sans); font-size:13.5px; display:none;
+  }
+
+  /* Results Dashboard */
+  .results{display:none; margin-top:64px;}
+  .results.show{display:block; animation:rise .6s cubic-bezier(.2,.8,.2,1) both;}
+  @keyframes rise{from{opacity:0; transform:translateY(18px);} to{opacity:1; transform:translateY(0);}}
+
+  .divider{
+    display:flex; align-items:center; gap:16px; margin:56px 0 34px;
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted-2);
+  }
+  .divider::before, .divider::after{content:''; height:1px; flex:1; background:var(--border);}
+
+  /* Gauge Section */
+  .gauge-section{display:flex; flex-direction:column; align-items:center; text-align:center;}
+  .gauge-label{font-family:var(--mono); font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--gold); margin-bottom:22px;}
+  .gauge-wrap{position:relative; width:220px; height:220px;}
+  .gauge-wrap svg{transform:rotate(-90deg);}
+  .gauge-track{fill:none; stroke:rgba(255,255,255,0.06); stroke-width:10;}
+  .gauge-fill{fill:none; stroke:url(#gaugeGrad); stroke-width:10; stroke-linecap:round; transition:stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1);}
+  .gauge-center{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;}
+  .gauge-num{font-family:var(--serif); font-weight:600; font-size:52px; line-height:1;}
+  .gauge-pct{font-family:var(--mono); font-size:13px; color:var(--muted); margin-top:4px;}
+  .verdict-title{font-family:var(--serif); font-size:24px; font-style:italic; color:var(--gold-bright); margin:26px 0 6px;}
+  .verdict-sub{color:var(--muted); font-size:14.5px; max-width:44ch; margin:0 auto;}
+
+  /* Dossier Profile Cards */
+  .dossier{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
+  @media (max-width:640px){ .dossier{grid-template-columns:1fr;} }
+  .dcard{
+    background:var(--panel-solid); border:1px solid var(--border); border-radius:14px; padding:22px;
+    opacity:0; transform:translateY(10px); animation:cardin .5s ease forwards;
+  }
+  .dcard.b{animation-delay:.12s;}
+  @keyframes cardin{to{opacity:1; transform:translateY(0);}}
+  .dcard-top{display:flex; gap:14px; align-items:center; margin-bottom:16px;}
+  .dcard img{width:52px; height:52px; border-radius:50%; border:1px solid var(--border-strong);}
+  .dcard-name{font-family:var(--serif); font-size:18px; font-weight:600;}
+  .dcard-login{font-family:var(--mono); font-size:11.5px; color:var(--muted); margin-top:2px;}
+  .dcard-bio{color:var(--muted); font-size:13px; line-height:1.6; margin-bottom:16px; min-height:1em;}
+  .dcard-stats{display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; border-top:1px solid var(--border); padding-top:14px;}
+  .dstat .dval{font-family:var(--mono); font-size:16px; color:var(--gold-bright);}
+  .dstat .dlbl{font-family:var(--mono); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted-2); margin-top:2px;}
+  .dcard-link{
+    display:inline-flex; align-items:center; gap:6px; margin-top:16px;
+    font-family:var(--mono); font-size:11.5px; color:var(--gold); text-decoration:none; letter-spacing:.04em;
+  }
+  .dcard-link:hover{color:var(--gold-bright);}
+
+  /* Grid Layout for Analytics & Charts */
+  .charts-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+  }
+  @media (max-width: 840px) { .charts-grid { grid-template-columns: 1fr; } }
+
+  .chart-card{
+    background:var(--panel-solid); border:1px solid var(--border); border-radius:14px;
+    padding:22px; position:relative; min-height:300px; display:flex; flex-direction:column;
+  }
+  .chart-card.full-width { grid-column: 1 / -1; }
+  .chart-card-title {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--gold); margin-bottom: 16px;
+  }
+  .chart-container {
+    position: relative; flex: 1; width: 100%; min-height: 220px;
+  }
+
+  /* Ledger Comparison Table */
+  .ledger{
+    background:var(--panel-solid); border:1px solid var(--border); border-radius:14px; overflow:hidden;
+  }
+  .ledger-row{
+    display:grid; grid-template-columns:1.3fr 1fr 1fr 40px;
+    align-items:center; padding:15px 22px; border-bottom:1px solid var(--border);
+    opacity:0; animation:rowin .4s ease forwards;
+  }
+  .ledger-row:last-child{border-bottom:none;}
+  @keyframes rowin{to{opacity:1;}}
+  .ledger-row.head{
+    font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--muted-2); background:rgba(255,255,255,0.02); animation:none; opacity:1;
+  }
+  .ledger-metric{font-size:14px; color:var(--ink); font-family:var(--sans); font-weight:500;}
+  .ledger-val{font-family:var(--mono); font-size:13px; color:var(--muted);}
+  .ledger-val.strong{color:var(--ink);}
+  .ledger-mark{font-family:var(--mono); font-size:15px; text-align:center;}
+  .ledger-mark.pos{color:var(--emerald);}
+  .ledger-mark.neg{color:var(--wine);}
+  .ledger-mark.neu{color:var(--muted-2);}
+  @media (max-width:640px){
+    .ledger-row{grid-template-columns:1fr 1fr 34px; grid-template-areas:"m a b" "m . mark"; padding:14px 16px;}
+    .ledger-row.head{display:none;}
+  }
+
+  /* Action Buttons */
+  .actions{display:flex; gap:12px; justify-content:center; margin-top:40px; flex-wrap:wrap;}
+  .ghost-btn{
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--ink); background:transparent; border:1px solid var(--border); border-radius:999px;
+    padding:11px 22px; cursor:pointer; transition:border-color .2s, color .2s;
+  }
+  .ghost-btn:hover{border-color:var(--gold); color:var(--gold-bright);}
+  .ghost-btn.copied{border-color:var(--emerald); color:var(--emerald);}
+
+  footer{text-align:center; margin-top:70px; color:var(--muted-2); font-size:13px;}
+  footer .tag{font-family:var(--mono); font-size:10.5px; margin-top:8px; color:#454239;}
+
+  /* --- Hall of Fame Presets --- */
+  .presets{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:28px;}
+  .preset-chip{
+    font-family:var(--mono); font-size:11px; letter-spacing:.03em;
+    color:var(--muted); background:rgba(255,255,255,0.03); border:1px solid var(--border);
+    border-radius:999px; padding:7px 14px; cursor:pointer; transition:border-color .2s, color .2s, background .2s;
+  }
+  .preset-chip:hover{border-color:var(--gold); color:var(--gold-bright); background:rgba(201,162,75,0.08);}
+  .preset-chip .pc-vs{color:var(--muted-2); font-style:italic; margin:0 2px;}
+
+  /* --- Heartbeat pulse on CTA while analysing --- */
+  .cta.pulsing{animation:heartbeat .86s ease-in-out infinite;}
+  @keyframes heartbeat{
+    0%,100%{transform:translateY(0) scale(1);}
+    14%{transform:translateY(-1px) scale(1.05);}
+    28%{transform:translateY(0) scale(1);}
+    42%{transform:translateY(-1px) scale(1.05);}
+    70%{transform:translateY(0) scale(1);}
+  }
+
+  /* --- Personality badges --- */
+  .personality-grid{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
+  @media (max-width:640px){ .personality-grid{grid-template-columns:1fr;} }
+  .pcard{background:var(--panel-solid); border:1px solid var(--border); border-radius:14px; padding:22px;}
+  .pcard-name{font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted-2); margin-bottom:14px;}
+  .badge-row{display:flex; flex-wrap:wrap; gap:8px;}
+  .pbadge{
+    font-family:var(--mono); font-size:12px; padding:8px 13px; border-radius:10px; line-height:1.3;
+    background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.25); color:#8fd6fb;
+    display:inline-flex; align-items:center; gap:6px;
+  }
+  .pbadge.owl{background:rgba(163,73,90,0.10); border-color:rgba(163,73,90,0.3); color:#e8b5bd;}
+  .pbadge.bird{background:rgba(230,196,118,0.10); border-color:rgba(230,196,118,0.3); color:var(--gold-bright);}
+  .pbadge.poly{background:rgba(63,157,120,0.10); border-color:rgba(63,157,120,0.3); color:#8fd6bb;}
+  .pbadge.spec{background:rgba(201,162,75,0.10); border-color:rgba(201,162,75,0.3); color:var(--gold-bright);}
+
+  /* --- Red / Green flags --- */
+  .flags-grid{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
+  @media (max-width:640px){ .flags-grid{grid-template-columns:1fr;} }
+  .flag-col{background:var(--panel-solid); border:1px solid var(--border); border-radius:14px; padding:22px;}
+  .flag-col-title{font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; margin-bottom:14px;}
+  .flag-col.green .flag-col-title{color:var(--emerald);}
+  .flag-col.red .flag-col-title{color:var(--wine);}
+  .flag-item{display:flex; gap:8px; padding:10px 0; border-bottom:1px solid var(--border); font-size:13.5px; color:var(--muted); line-height:1.55;}
+  .flag-item:last-child{border-bottom:none;}
+  .flag-empty{color:var(--muted-2); font-size:13px; font-style:italic;}
+
+  /* --- Merge conflict predictor & project idea --- */
+  .conflict-list{display:flex; flex-direction:column; gap:12px;}
+  .conflict-item{
+    background:var(--panel-solid); border:1px solid var(--border); border-radius:12px;
+    padding:16px 18px; display:flex; align-items:center; gap:14px;
+  }
+  .conflict-sides{font-family:var(--sans); font-size:13.5px; color:var(--muted); flex:1; line-height:1.5;}
+  .conflict-sides b{color:var(--gold-bright); font-weight:600;}
+  .conflict-tag{
+    font-family:var(--mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--wine); background:rgba(163,73,90,0.1); border:1px solid rgba(163,73,90,0.3);
+    border-radius:999px; padding:4px 10px; flex-shrink:0; white-space:nowrap;
+  }
+
+  .idea-card{
+    background:linear-gradient(160deg, rgba(201,162,75,0.08), transparent 60%), var(--panel-solid);
+    border:1px solid var(--border-strong); border-radius:14px; padding:24px;
+  }
+  .idea-label{font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--gold); margin-bottom:10px;}
+  .idea-title{font-family:var(--serif); font-size:20px; font-style:italic; color:var(--ink); margin-bottom:8px;}
+  .idea-desc{color:var(--muted); font-size:14px; line-height:1.6;}
+
+  /* --- Ambient floating hearts (romantic animation layer) --- */
+  .hearts-field{position:fixed; inset:0; pointer-events:none; z-index:1; overflow:hidden;}
+  .floating-heart{
+    position:absolute; bottom:-40px; opacity:0; will-change:transform, opacity;
+    animation:floatUp linear forwards; filter:drop-shadow(0 0 6px rgba(201,162,75,0.35));
+  }
+  @keyframes floatUp{
+    0%{transform:translateY(0) translateX(0) rotate(0deg); opacity:0;}
+    8%{opacity:var(--hmax,.5);}
+    88%{opacity:calc(var(--hmax,.5) * .6);}
+    100%{transform:translateY(-115vh) translateX(var(--drift,24px)) rotate(360deg); opacity:0;}
+  }
+  .wrap{position:relative; z-index:2;}
+
+  /* --- Typewriter reveal for the verdict line --- */
+  .verdict-sub.typing::after{content:'▌'; margin-left:2px; color:var(--gold); animation:blink 1s step-end infinite;}
+  @keyframes blink{50%{opacity:0;}}
+
+  /* --- Romantic / Roast mode toggle --- */
+  .mode-toggle{display:flex; justify-content:center; align-items:center; gap:10px; margin:-6px 0 26px;}
+  .mode-toggle span{font-family:var(--mono); font-size:11px; letter-spacing:.06em; color:var(--muted-2); transition:color .2s;}
+  .mode-toggle span.active{color:var(--gold-bright);}
+  .mode-switch{
+    width:46px; height:24px; border-radius:999px; background:rgba(255,255,255,0.06);
+    border:1px solid var(--border); position:relative; cursor:pointer; flex-shrink:0;
+  }
+  .mode-switch::after{
+    content:''; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%;
+    background:var(--gold-bright); transition:transform .25s ease;
+  }
+  .mode-switch.roast::after{transform:translateX(22px); background:#c9564b;}
+
+  /* --- Git Zodiac sign badge --- */
+  .pbadge.zodiac{background:rgba(201,162,75,0.10); border-color:rgba(201,162,75,0.32); color:var(--gold-bright);}
+
+  /* --- Share to X button --- */
+  .ghost-btn.share-btn{border-color:rgba(56,189,248,0.3); color:#8fd6fb;}
+  .ghost-btn.share-btn:hover{border-color:#8fd6fb; background:rgba(56,189,248,0.08);}
+
+  /* --- Confetti burst on reveal --- */
+  .confetti-piece{
+    position:fixed; top:-20px; z-index:5; pointer-events:none; will-change:transform, opacity;
+    animation:confettiFall linear forwards;
+  }
+  @keyframes confettiFall{
+    0%{transform:translateY(0) rotate(0deg); opacity:1;}
+    100%{transform:translateY(100vh) rotate(720deg); opacity:0;}
+  }
+</style>
+</head>
+<body>
+<div class="hearts-field" id="heartsField" aria-hidden="true"></div>
+<div class="wrap">
+
+  <div class="masthead">
+    <p class="eyebrow">💻 GitHeartbeat · Developer Matchmaking 💘</p>
+    <h1>Find your <em>code soulmate</em> 💘</h1>
+    <p>A private compatibility reading, drawn from public GitHub data. Two handles in, a full analytics dossier out.</p>
+  </div>
+
+  <div class="app-tabs" id="appTabs" role="tablist">
+    <button class="app-tab active" id="tabCompare" type="button" role="tab" aria-selected="true">💌 Compare Two</button>
+    <button class="app-tab" id="tabSwipe" type="button" role="tab" aria-selected="false">🔥 Swipe &amp; Match</button>
+  </div>
+
+  <div id="compareView">
+  <div class="panel">
+    <div class="presets" id="presets">
+      <button class="preset-chip" type="button" data-a="octocat" data-b="torvalds">octocat<span class="pc-vs">×</span>torvalds</button>
+      <button class="preset-chip" type="button" data-a="gaearon" data-b="rich-harris">gaearon<span class="pc-vs">×</span>rich-harris</button>
+      <button class="preset-chip" type="button" data-a="sindresorhus" data-b="tj">sindresorhus<span class="pc-vs">×</span>tj</button>
+      <button class="preset-chip" type="button" data-a="addyosmani" data-b="paulirish">addyosmani<span class="pc-vs">×</span>paulirish</button>
+      <button class="preset-chip" type="button" data-a="yyx990803" data-b="rauchg">yyx990803<span class="pc-vs">×</span>rauchg</button>
+    </div>
+    <div class="devs">
+      <div class="field">
+        <label for="devA">Developer A</label>
+        <div class="inputrow">
+          <span class="at">@</span>
+          <input id="devA" type="text" placeholder="octocat" autocomplete="off" spellcheck="false" value="octocat">
+        </div>
+        <div class="suggest" id="suggestA" role="listbox"></div>
+      </div>
+      <div class="join" aria-hidden="true">💘</div>
+      <div class="field">
+        <label for="devB">Developer B</label>
+        <div class="inputrow">
+          <span class="at">@</span>
+          <input id="devB" type="text" placeholder="torvalds" autocomplete="off" spellcheck="false" value="torvalds">
+        </div>
+        <div class="suggest" id="suggestB" role="listbox"></div>
+      </div>
+    </div>
+
+    <div class="mode-toggle">
+      <span id="modeLabelLeft" class="active">💌 Romantic</span>
+      <div class="mode-switch" id="modeSwitch" role="switch" aria-checked="false" tabindex="0"></div>
+      <span id="modeLabelRight">🔥 Roast</span>
+    </div>
+
+    <div class="cta-row">
+      <button class="cta" id="runBtn" type="button">
+        <span id="runLabel">Analyse Compatibility</span> <span aria-hidden="true">💘</span>
+      </button>
+    </div>
+    <p class="hint">No login required · reads only public GitHub data</p>
+
+    <div class="errbox" id="errbox" role="alert"></div>
+  </div>
+
+  <div class="results" id="results">
+
+    <!-- Compatibility Gauge -->
+    <div class="gauge-section">
+      <p class="gauge-label">💘 Compatibility Reading</p>
+      <div class="gauge-wrap">
+        <svg width="220" height="220" viewBox="0 0 220 220">
+          <defs>
+            <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#e6c476"/>
+              <stop offset="100%" stop-color="#3f9d78"/>
+            </linearGradient>
+          </defs>
+          <circle class="gauge-track" cx="110" cy="110" r="96"></circle>
+          <circle class="gauge-fill" id="gaugeFill" cx="110" cy="110" r="96" stroke-dasharray="603.19" stroke-dashoffset="603.19"></circle>
+        </svg>
+        <div class="gauge-center">
+          <div class="gauge-num" id="scoreNum">0</div>
+          <div class="gauge-pct">out of 100</div>
+        </div>
+      </div>
+      <p class="verdict-title" id="verdictTitle"></p>
+      <p class="verdict-sub" id="verdictSub"></p>
+    </div>
+
+    <!-- Profiles -->
+    <div class="divider">👤 Profile Summary</div>
+    <div class="dossier" id="dossier"></div>
+
+    <!-- Dev Personality -->
+    <div class="divider">🧬 Dev Personality</div>
+    <div class="personality-grid" id="personalityGrid"></div>
+
+    <!-- Visual Analytics & Charts Dashboard -->
+    <div class="divider">📊 Visual Analytics & Telemetry</div>
+    <div class="charts-grid">
+      <!-- Chart 1: Monthly Commits -->
+      <div class="chart-card full-width">
+        <div class="chart-card-title">🔀 Monthly Commit Activity (6 Months)</div>
+        <div class="chart-container">
+          <canvas id="commitChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Chart 2: Language Matrix -->
+      <div class="chart-card">
+        <div class="chart-card-title">💻 Language Distribution</div>
+        <div class="chart-container">
+          <canvas id="langChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Chart 3: Developer Synergy Radar -->
+      <div class="chart-card">
+        <div class="chart-card-title">🎯 Developer Synergy Index</div>
+        <div class="chart-container">
+          <canvas id="radarChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ledger Table -->
+    <div class="divider">📋 Itemised Breakdown</div>
+    <div class="ledger" id="ledger"></div>
+
+    <!-- Red / Green Flags -->
+    <div class="divider">🚩 Flags & Compatibility Signals</div>
+    <div class="flags-grid" id="flagsGrid"></div>
+
+    <!-- Merge Conflict Predictor -->
+    <div class="divider">⚔️ Merge Conflict Forecast</div>
+    <div class="conflict-list" id="conflictList"></div>
+
+    <!-- Project Idea Generator -->
+    <div class="divider">💡 Suggested Collab</div>
+    <div class="idea-card" id="ideaCard"></div>
+
+    <div class="actions">
+      <button class="ghost-btn" id="copyBtn" type="button">Copy result</button>
+      <button class="ghost-btn" id="downloadBtn" type="button">Download Love Letter PDF 💌</button>
+      <button class="ghost-btn share-btn" id="shareBtn" type="button">Share to X 🐦</button>
+      <button class="ghost-btn" id="againBtn" type="button">Run another reading</button>
+    </div>
+
+  </div>
+  </div><!-- /compareView -->
+
+  <div id="swipeView" style="display:none;">
+    <div class="panel swipe-setup" id="swipeSetup">
+      <div class="field">
+        <label for="swipeYou">Your GitHub username</label>
+        <div class="inputrow"><span class="at">@</span><input id="swipeYou" type="text" placeholder="octocat" autocomplete="off" spellcheck="false"></div>
+        <div class="suggest" id="suggestYou" role="listbox"></div>
+      </div>
+      <div class="field" style="margin-top:22px;">
+        <label for="swipeCandidates">Candidates to swipe through</label>
+        <textarea id="swipeCandidates" rows="3" placeholder="torvalds, gaearon, sindresorhus, addyosmani, tj, rich-harris…"></textarea>
+      </div>
+      <div class="cta-row">
+        <button class="cta" id="swipeStartBtn" type="button"><span id="swipeStartLabel">Start Swiping</span> <span aria-hidden="true">🔥</span></button>
+      </div>
+      <p class="hint">Comma or newline separated GitHub usernames · we fetch each one as you swipe · nothing is stored</p>
+      <div class="errbox" id="swipeErrbox" role="alert"></div>
+    </div>
+
+    <div class="swipe-stage" id="swipeStage" style="display:none;">
+      <p class="swipe-counter" id="swipeCounter"></p>
+      <div class="card-stack" id="cardStack"></div>
+      <div class="swipe-controls">
+        <button class="swipe-btn pass" id="passBtn" type="button" aria-label="Pass">✕</button>
+        <button class="swipe-btn rewind" id="rewindBtn" type="button" aria-label="Undo">↺</button>
+        <button class="swipe-btn like" id="likeBtn" type="button" aria-label="Like">♥</button>
+      </div>
+
+      <div class="divider">💘 Your Matches</div>
+      <div class="matches-grid" id="matchesGrid">
+        <p class="matches-empty" id="matchesEmpty">No matches yet — start swiping to find your code soulmate.</p>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Built for developers who ship code &amp; feelings 💻❤️
+    <div class="tag">no data is stored · requests go straight to api.github.com</div>
+  </footer>
+
+</div>
+
+<!-- Match overlay -->
+<div class="match-overlay" id="matchOverlay" aria-hidden="true">
+  <div class="match-overlay-inner">
+    <p class="match-kicker">✨ It's a Match ✨</p>
+    <div class="match-avatars" id="matchAvatars"></div>
+    <p class="match-names" id="matchNames"></p>
+    <p class="match-score" id="matchScoreText"></p>
+    <div class="match-actions">
+      <button class="cta" id="matchChatBtn" type="button">Say hi 💬</button>
+      <button class="ghost-btn" id="matchKeepBtn" type="button">Keep swiping</button>
+    </div>
+  </div>
+</div>
+
+<!-- No-match toast (swiped right but the numbers didn't align) -->
+<div class="nomatch-toast" id="nomatchToast"></div>
+
+<!-- Chat modal -->
+<div class="chat-overlay" id="chatOverlay" aria-hidden="true">
+  <div class="chat-window">
+    <div class="chat-header">
+      <img id="chatAvatar" src="" alt="">
+      <div class="chat-headtext">
+        <div class="chat-name" id="chatName"></div>
+        <div class="chat-status">online · <span id="chatScore"></span>% compatible</div>
+      </div>
+      <button class="chat-close" id="chatCloseBtn" type="button" aria-label="Close chat">✕</button>
+    </div>
+    <div class="chat-body" id="chatBody"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = (id) => document.getElementById(id);
+  const devA = $('devA'), devB = $('devB'), runBtn = $('runBtn'), runLabel = $('runLabel');
+  const errbox = $('errbox'), results = $('results');
+  const scoreNum = $('scoreNum'), gaugeFill = $('gaugeFill');
+  const verdictTitle = $('verdictTitle'), verdictSub = $('verdictSub');
+  const dossierEl = $('dossier'), ledgerEl = $('ledger');
+  const copyBtn = $('copyBtn'), againBtn = $('againBtn'), downloadBtn = $('downloadBtn'), shareBtn = $('shareBtn');
+  const modeSwitch = $('modeSwitch'), modeLabelLeft = $('modeLabelLeft'), modeLabelRight = $('modeLabelRight');
+  const suggestA = $('suggestA'), suggestB = $('suggestB');
+
+  const CIRC = 2 * Math.PI * 96; // 603.19
+
+  let chartInstances = {};
+
+  async function fetchUser(username){
+    const res = await fetch('https://api.github.com/users/' + encodeURIComponent(username));
+    if(!res.ok){
+      if(res.status === 404) throw new Error('"' + username + '" was not found on GitHub.');
+      if(res.status === 403) throw new Error('GitHub API rate limit reached — please try again shortly.');
+      throw new Error('Could not load "' + username + '" (status ' + res.status + ').');
+    }
+    return res.json();
+  }
+
+  async function fetchRepoDetails(username){
+    try{
+      const res = await fetch('https://api.github.com/users/' + encodeURIComponent(username) + '/repos?per_page=100&sort=pushed');
+      if(!res.ok) return { langs: new Map(), repos: [] };
+      const repos = await res.json();
+      const langs = new Map();
+      repos.forEach(r => { 
+        if(r.language) {
+          langs.set(r.language, (langs.get(r.language) || 0) + 1);
+        }
+      });
+      return { langs, repos };
+    }catch(e){ return { langs: new Map(), repos: [] }; }
+  }
+
+  function jaccard(aSet, bSet){
+    if(aSet.size === 0 && bSet.size === 0) return 0;
+    const inter = [...aSet].filter(x => bSet.has(x)).length;
+    const union = new Set([...aSet, ...bSet]).size;
+    return union === 0 ? 0 : inter / union;
+  }
+
+  function closeness(a, b){
+    const la = Math.log(a + 1), lb = Math.log(b + 1);
+    return Math.max(0, 1 - Math.abs(la - lb) / 4);
+  }
+
+  function yearsSince(dateStr){
+    return (Date.now() - new Date(dateStr)) / 31557600000;
+  }
+
+  async function fetchPushEvents(username){
+    const all = [];
+    for(let page = 1; page <= 3; page++){
+      try{
+        const res = await fetch('https://api.github.com/users/' + encodeURIComponent(username) + '/events/public?per_page=100&page=' + page);
+        if(!res.ok) break;
+        const batch = await res.json();
+        if(!Array.isArray(batch) || batch.length === 0) break;
+        all.push(...batch);
+        if(batch.length < 100) break;
+      }catch(e){ break; }
+    }
+    return all.filter(e => e.type === 'PushEvent');
+  }
+
+  function last6MonthKeys(){
+    const keys = [];
+    const now = new Date();
+    for(let i = 5; i >= 0; i--){
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      keys.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+    }
+    return keys;
+  }
+
+  function monthLabel(key){
+    const [y, m] = key.split('-').map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'short' });
+  }
+
+  function monthlyCommitCounts(pushEvents){
+    const counts = {};
+    pushEvents.forEach(ev => {
+      const d = new Date(ev.created_at);
+      const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      const n = (ev.payload && ev.payload.commits) ? ev.payload.commits.length : (ev.payload && ev.payload.size) || 0;
+      counts[key] = (counts[key] || 0) + n;
+    });
+    return counts;
+  }
+
+  function destroyCharts() {
+    Object.keys(chartInstances).forEach(k => {
+      if(chartInstances[k]) chartInstances[k].destroy();
+    });
+    chartInstances = {};
+  }
+
+  /* Render Chart.js Dynamic Visualizations */
+  function renderAnalyticsCharts(countsA, countsB, userA, userB, langsA, langsB, metrics) {
+    destroyCharts();
+
+    Chart.defaults.color = '#948d80';
+    Chart.defaults.font.family = "'JetBrains Mono', monospace";
+
+    // 1. Line Chart: Monthly Commits
+    const months = last6MonthKeys();
+    const labelsMonth = months.map(monthLabel);
+    const dataA = months.map(k => countsA[k] || 0);
+    const dataB = months.map(k => countsB[k] || 0);
+
+    const ctxCommit = $('commitChart').getContext('2d');
+    chartInstances.commit = new Chart(ctxCommit, {
+      type: 'line',
+      data: {
+        labels: labelsMonth,
+        datasets: [
+          {
+            label: '@' + userA.login,
+            data: dataA,
+            borderColor: '#e6c476',
+            backgroundColor: 'rgba(230, 196, 118, 0.1)',
+            fill: true,
+            tension: 0.3
+          },
+          {
+            label: '@' + userB.login,
+            data: dataB,
+            borderColor: '#3f9d78',
+            backgroundColor: 'rgba(63, 157, 120, 0.1)',
+            fill: true,
+            tension: 0.3
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'top' } },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true }
+        }
+      }
+    });
+
+    // 2. Bar Chart: Language Breakdown
+    const allLangs = Array.from(new Set([...langsA.keys(), ...langsB.keys()])).slice(0, 6);
+    const langDataA = allLangs.map(l => langsA.get(l) || 0);
+    const langDataB = allLangs.map(l => langsB.get(l) || 0);
+
+    const ctxLang = $('langChart').getContext('2d');
+    chartInstances.lang = new Chart(ctxLang, {
+      type: 'bar',
+      data: {
+        labels: allLangs.length ? allLangs : ['None'],
+        datasets: [
+          { label: '@' + userA.login, data: langDataA, backgroundColor: '#e6c476' },
+          { label: '@' + userB.login, data: langDataB, backgroundColor: '#38bdf8' }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'top' } },
+        scales: {
+          x: { grid: { display: false } },
+          y: { grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true }
+        }
+      }
+    });
+
+    // 3. Radar Chart: Synergy Index
+    const ctxRadar = $('radarChart').getContext('2d');
+    chartInstances.radar = new Chart(ctxRadar, {
+      type: 'radar',
+      data: {
+        labels: ['Languages', 'Repos', 'Followers', 'Account Age', 'Activity'],
+        datasets: [{
+          label: 'Synergy Score',
+          data: [
+            Math.round(metrics.langScore * 100),
+            Math.round(metrics.repoScore * 100),
+            Math.round(metrics.followerScore * 100),
+            Math.round(metrics.ageScore * 100),
+            Math.round(metrics.activityScore * 100)
+          ],
+          borderColor: '#c9a24b',
+          backgroundColor: 'rgba(201, 162, 75, 0.2)',
+          pointBackgroundColor: '#e6c476'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          r: {
+            angleLines: { color: 'rgba(255,255,255,0.1)' },
+            grid: { color: 'rgba(255,255,255,0.1)' },
+            pointLabels: { color: '#948d80', font: { size: 10 } },
+            ticks: { display: false, beginAtZero: true, max: 100 }
+          }
+        }
+      }
+    });
+  }
+
+  function verdictFor(score){
+    if(score >= 90) return ["💍 A fast-forward merge", "No conflicts. Rare and worth acting on."];
+    if(score >= 75) return ["💕 A clean pull request", "Well aligned, ready to ship together."];
+    if(score >= 55) return ["💛 A workable merge", "A few conflicts, all easily resolved."];
+    if(score >= 35) return ["🤔 Separate branches", "Different worlds, but a rebase could work."];
+    return ["💔 A merge conflict", "Optimising for very different repositories."];
+  }
+
+  function roastVerdictFor(score){
+    if(score >= 90) return ["🔥 Suspiciously compatible", "Either soulmates, or the same person with two GitHub accounts."];
+    if(score >= 75) return ["😏 Annoyingly well matched", "Hate to admit it, but this actually works."];
+    if(score >= 55) return ["🙃 It's... fine", "Not a disaster. Not a fairytale either."];
+    if(score >= 35) return ["💀 Rough draft", "Someone's going to have to compromise. A lot."];
+    return ["☠️ Delete the repo", "This pairing needs a full rewrite from scratch."];
+  }
+
+  function animateCountUp(target){
+    const dur = 1400, start = performance.now();
+    function tick(now){
+      const p = Math.min(1, (now - start) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      scoreNum.textContent = Math.round(eased * target);
+      if(p < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function animateGauge(score){
+    const offset = CIRC - (score/100) * CIRC;
+    gaugeFill.style.strokeDashoffset = CIRC;
+    requestAnimationFrame(() => {
+      gaugeFill.style.strokeDashoffset = offset;
+    });
+  }
+
+  function dossierCard(user, cls){
+    const el = document.createElement('div');
+    el.className = 'dcard ' + cls;
+    const joined = new Date(user.created_at).toLocaleDateString(undefined, { year:'numeric', month:'short' });
+    el.innerHTML =
+      '<div class="dcard-top">' +
+        '<img src="' + user.avatar_url + '" alt="" loading="lazy">' +
+        '<div><div class="dcard-name">' + (user.name || user.login) + '</div>' +
+        '<div class="dcard-login">@' + user.login + (user.location ? ' · ' + user.location : '') + '</div></div>' +
+      '</div>' +
+      '<div class="dcard-bio">' + (user.bio || 'No bio provided.') + '</div>' +
+      '<div class="dcard-stats">' +
+        '<div class="dstat"><div class="dval">📦 ' + user.public_repos + '</div><div class="dlbl">Repositories</div></div>' +
+        '<div class="dstat"><div class="dval">👥 ' + user.followers + '</div><div class="dlbl">Followers</div></div>' +
+        '<div class="dstat"><div class="dval">' + (user.hireable ? '💼 Yes' : '💼 No') + '</div><div class="dlbl">Hireable</div></div>' +
+        '<div class="dstat"><div class="dval">📅 ' + joined + '</div><div class="dlbl">Joined</div></div>' +
+      '</div>' +
+      '<a class="dcard-link" href="' + user.html_url + '" target="_blank" rel="noopener">View profile &rarr;</a>';
+    return el;
+  }
+
+  function ledgerRow(metric, valA, valB, mark, idx){
+    const row = document.createElement('div');
+    row.className = 'ledger-row';
+    row.style.animationDelay = (idx * 70) + 'ms';
+    const markCls = mark === '+' ? 'pos' : mark === '-' ? 'neg' : 'neu';
+    row.innerHTML =
+      '<div class="ledger-metric">' + metric + '</div>' +
+      '<div class="ledger-val strong">' + valA + '</div>' +
+      '<div class="ledger-val strong">' + valB + '</div>' +
+      '<div class="ledger-mark ' + markCls + '">' + (mark === '+' ? '💚' : mark === '-' ? '💔' : '🤍') + '</div>';
+    return row;
+  }
+
+  // ============================================================
+  // MODULE: Dev Personality Engine
+  // ============================================================
+  function commitTimingProfile(pushEvents){
+    if(!pushEvents.length) return { label: 'No Data', cls: 'bird', icon: '🌫️' };
+    const hourCounts = new Array(24).fill(0);
+    pushEvents.forEach(ev => { hourCounts[new Date(ev.created_at).getUTCHours()]++; });
+    const total = hourCounts.reduce((s,n)=>s+n,0);
+    if(total === 0) return { label: 'No Data', cls: 'bird', icon: '🌫️' };
+    const nightHours = [22,23,0,1,2,3,4];
+    const dayHours = [5,6,7,8,9,10,11];
+    const nightSum = nightHours.reduce((s,h)=>s+hourCounts[h],0);
+    const daySum = dayHours.reduce((s,h)=>s+hourCounts[h],0);
+    if(nightSum > daySum && nightSum / total > 0.32) return { label: 'Night Owl', cls: 'owl', icon: '🦉' };
+    if(daySum > nightSum && daySum / total > 0.32) return { label: 'Early Bird', cls: 'bird', icon: '🐦' };
+    return { label: 'Steady Grinder', cls: 'bird', icon: '⏱️' };
+  }
+
+  function languageBreadthProfile(langMap){
+    const count = langMap.size;
+    if(count === 0) return { label: 'Unclassified', cls: 'spec', icon: '❔' };
+    if(count >= 6) return { label: 'Polyglot', cls: 'poly', icon: '🌐' };
+    if(count <= 2) return { label: 'Specialist', cls: 'spec', icon: '🎯' };
+    return { label: 'Balanced Toolkit', cls: 'poly', icon: '🧰' };
+  }
+
+  const GIT_SIGNS = [
+    ['♑ The New Year Refactorer', '🔄'], ['♒ The Valentine Committer', '💘'],
+    ['♓ The Spring Cleaner', '🧹'], ['♈ The April Fool\'s Deployer', '🃏'],
+    ['♉ The May Day Maintainer', '🌱'], ['♊ The Midyear Sprinter', '🏃'],
+    ['♋ The Summer Hacker', '☀️'], ['♌ The Quiet Contributor', '🌙'],
+    ['♍ The Back-to-School Learner', '📚'], ['♎ The Halloween Hotfixer', '🎃'],
+    ['♏ The Thanksgiving Merger', '🦃'], ['♐ The Year-End Closer', '🎄']
+  ];
+  function gitZodiac(createdAt){
+    const month = new Date(createdAt).getUTCMonth();
+    const [label, icon] = GIT_SIGNS[month];
+    return { label, icon };
+  }
+
+  function commitConsistency(monthlyCounts){
+    const vals = Object.values(monthlyCounts);
+    if(vals.length < 2) return 0;
+    const mean = vals.reduce((s,n)=>s+n,0) / vals.length;
+    if(mean === 0) return 0;
+    const variance = vals.reduce((s,n)=>s+Math.pow(n-mean,2),0) / vals.length;
+    return Math.max(0, 1 - (Math.sqrt(variance) / (mean + 1)));
+  }
+
+  function starForkRatio(repos){
+    let stars = 0, forks = 0, ownRepos = 0, forkedRepos = 0;
+    (repos || []).forEach(r => {
+      stars += r.stargazers_count || 0;
+      forks += r.forks_count || 0;
+      if(r.fork) forkedRepos++; else ownRepos++;
+    });
+    return { stars, forks, ownRepos, forkedRepos, ratio: forks === 0 ? stars : stars / forks };
+  }
+
+  function renderPersonality(userA, userB, langsA, langsB, pushA, pushB, monthlyA, monthlyB){
+    const grid = $('personalityGrid');
+    grid.innerHTML = '';
+    [[userA, langsA, pushA, monthlyA], [userB, langsB, pushB, monthlyB]].forEach(([user, langs, push, monthly]) => {
+      const timing = commitTimingProfile(push);
+      const breadth = languageBreadthProfile(langs);
+      const consistency = commitConsistency(monthly);
+      const zodiac = gitZodiac(user.created_at);
+      const card = document.createElement('div');
+      card.className = 'pcard';
+      card.innerHTML =
+        '<div class="pcard-name">@' + user.login + '</div>' +
+        '<div class="badge-row">' +
+          '<span class="pbadge ' + timing.cls + '">' + timing.icon + ' ' + timing.label + '</span>' +
+          '<span class="pbadge ' + breadth.cls + '">' + breadth.icon + ' ' + breadth.label + '</span>' +
+          '<span class="pbadge">' + (consistency > 0.6 ? '📈 Consistent Shipper' : '📉 Bursty Shipper') + '</span>' +
+          '<span class="pbadge zodiac">' + zodiac.icon + ' ' + zodiac.label + '</span>' +
+        '</div>';
+      grid.appendChild(card);
+    });
+  }
+
+  // ============================================================
+  // MODULE: Red / Green Flags Engine
+  // ============================================================
+  function generateFlags(userA, userB, sharedLangs, statsA, statsB, monthlyA, monthlyB, timingA, timingB){
+    const green = [], red = [];
+    const countSumA = Object.values(monthlyA).reduce((s,n)=>s+n,0);
+    const countSumB = Object.values(monthlyB).reduce((s,n)=>s+n,0);
+
+    if(sharedLangs.length >= 2) green.push('Shares ' + sharedLangs.length + ' languages — pair-programming without a translator.');
+    else if(sharedLangs.length === 0) red.push('Zero shared languages — every code review starts with a syntax lecture.');
+
+    if(userA.hireable && userB.hireable) green.push('Both flagged "hireable" — matched ambition, low risk of a stalled side-quest.');
+
+    if(statsA.ratio >= 3 && statsB.ratio >= 3) green.push('Healthy star-to-fork ratios on both sides — original work, not just forked clones.');
+    if(statsA.ratio < 0.5 || statsB.ratio < 0.5) red.push('One profile leans heavily on forks over original stars — may prefer remixing to building.');
+
+    if(countSumA === 0 || countSumB === 0) red.push('One profile shows no recent public push activity — could be quiet, private, or dormant.');
+    else if(closeness(countSumA, countSumB) > 0.7) green.push('Recent commit volumes are closely matched — similar cadence, similar energy.');
+
+    const followerGap = Math.abs(userA.followers - userB.followers);
+    if(followerGap > Math.max(userA.followers, userB.followers, 1) * 3) red.push('Large follower gap — one of you may be (unofficially) the mentor here.');
+
+    if(timingA.label !== 'No Data' && timingB.label !== 'No Data'){
+      if(timingA.label !== timingB.label && timingA.label !== 'Steady Grinder' && timingB.label !== 'Steady Grinder'){
+        red.push(timingA.label + ' meets ' + timingB.label + ' — your best coding hours barely overlap.');
+      } else if(timingA.label === timingB.label){
+        green.push('Same body clock (' + timingA.label + ') — peak hours actually line up.');
+      }
+    }
+
+    if(closeness(yearsSince(userA.created_at), yearsSince(userB.created_at)) > 0.75){
+      green.push('Comparable years on GitHub — similar amount of scar tissue from production incidents.');
+    }
+
+    return { green, red };
+  }
+
+  const ROAST_GREEN_PREFIXES = ['Begrudgingly: ', 'Fine, credit where due — ', 'Okay this actually slaps: ', 'Surprisingly not terrible: '];
+  const ROAST_RED_PREFIXES = ['Yikes: ', 'Not gonna lie: ', 'Red flag klaxon: ', 'Someone is in denial: '];
+
+  function renderFlags(flags, roast){
+    const grid = $('flagsGrid');
+    grid.innerHTML = '';
+    const greenItems = roast ? flags.green.map((t, i) => ROAST_GREEN_PREFIXES[seededHash(t + i) % ROAST_GREEN_PREFIXES.length] + t) : flags.green;
+    const redItems = roast ? flags.red.map((t, i) => ROAST_RED_PREFIXES[seededHash(t + i) % ROAST_RED_PREFIXES.length] + t) : flags.red;
+    const buildCol = (title, cls, items, icon) => {
+      const d = document.createElement('div');
+      d.className = 'flag-col ' + cls;
+      d.innerHTML = '<div class="flag-col-title">' + title + '</div>' +
+        (items.length ? items.map(t => '<div class="flag-item">' + icon + ' ' + t + '</div>').join('') :
+        '<div class="flag-empty">Nothing notable here.</div>');
+      return d;
+    };
+    grid.appendChild(buildCol(roast ? 'Reluctant Positives' : 'Green Flags', 'green', greenItems, roast ? '🙄' : '💚'));
+    grid.appendChild(buildCol(roast ? 'Red Flags (Unfiltered)' : 'Red Flags', 'red', redItems, roast ? '🚨' : '💔'));
+  }
+
+  // ============================================================
+  // MODULE: Merge Conflict Predictor & Project Idea Generator
+  // ============================================================
+  const CONFLICT_TOPICS = [
+    ['Tabs', 'Spaces'], ['REST', 'GraphQL'], ['Vim', 'VS Code'], ['Monolith', 'Microservices'],
+    ['npm', 'pnpm'], ['Mocking everything', 'Testing real dependencies'], ['Rebase', 'Merge commits'],
+    ['Dark mode always', 'Light mode default'], ['Comments explain why', 'Code should self-document']
+  ];
+
+  function seededHash(str){
+    let h = 0;
+    for(let i = 0; i < str.length; i++){ h = (h * 31 + str.charCodeAt(i)) >>> 0; }
+    return h;
+  }
+
+  function pickConflicts(loginA, loginB){
+    const pool = [...CONFLICT_TOPICS];
+    const picked = [];
+    let s = seededHash(loginA + '::' + loginB) || 1;
+    for(let i = 0; i < 3 && pool.length; i++){
+      s = (s * 1103515245 + 12345) >>> 0;
+      picked.push(pool.splice(s % pool.length, 1)[0]);
+    }
+    return picked.map(pair => {
+      s = (s * 1103515245 + 12345) >>> 0;
+      const flip = s % 2 === 0;
+      return flip ? [loginA, pair[0], loginB, pair[1]] : [loginA, pair[1], loginB, pair[0]];
+    });
+  }
+
+  function renderMergeConflicts(loginA, loginB){
+    const list = $('conflictList');
+    const conflicts = pickConflicts(loginA, loginB);
+    list.innerHTML = conflicts.map(([nameA, sideA, nameB, sideB]) =>
+      '<div class="conflict-item"><div class="conflict-sides">@' + nameA + ' will fight for <b>' + sideA +
+      '</b>, @' + nameB + ' will die on the hill of <b>' + sideB + '</b>.</div>' +
+      '<div class="conflict-tag">Likely Debate</div></div>'
+    ).join('');
+    return conflicts;
+  }
+
+  const PROJECT_IDEAS = {
+    JavaScript: ['a real-time collaborative markdown editor', 'a browser extension that visualises tab clutter'],
+    TypeScript: ['a strongly-typed habit tracker with a public API', 'a type-safe form builder toolkit'],
+    Python: ['a CLI that turns GitHub activity into a weekly newsletter', 'a small ML toy that predicts commit mood from messages'],
+    Go: ['a tiny reverse proxy with a live traffic dashboard', 'a concurrent job queue with a terminal UI'],
+    Rust: ['a blazing-fast static site generator', 'a memory-safe CLI clone of a favourite Unix tool'],
+    Java: ['a plugin-based build tool for internal tooling', 'a lightweight service-mesh sandbox'],
+    Ruby: ['a Rails engine for shareable changelogs', 'a DSL for generating onboarding docs'],
+    'C++': ['a game-jam-scale physics sandbox', 'a header-only utility library'],
+    PHP: ['a self-hosted link-in-bio page generator', 'a lightweight CMS for developer blogs'],
+    Swift: ['a menu-bar app that gamifies commit streaks', 'a SwiftUI dashboard for GitHub stats'],
+    HTML: ['a themeable personal site generator', 'an interactive resume builder'],
+    Shell: ['a dotfiles sync tool with profile presets', 'a script pack for onboarding new machines']
+  };
+  const GENERIC_IDEAS = [
+    'a shared "now playing" status page for your terminals',
+    'a two-player commit-streak leaderboard bot',
+    'a joint changelog generator that merges both your repos'
+  ];
+
+  function renderProjectIdea(sharedLangs){
+    const card = $('ideaCard');
+    const lang = sharedLangs.find(l => PROJECT_IDEAS[l]);
+    let ideaText, label;
+    if(lang){
+      const ideas = PROJECT_IDEAS[lang];
+      label = 'Built around ' + lang;
+      ideaText = 'Since you both write ' + lang + ', try building ' + ideas[seededHash(lang) % ideas.length] + '.';
+    }else{
+      label = 'No shared primary language';
+      const key = sharedLangs.join(',') || 'fallback';
+      ideaText = 'Bridge the gap with ' + GENERIC_IDEAS[seededHash(key) % GENERIC_IDEAS.length] + '.';
+    }
+    card.innerHTML =
+      '<div class="idea-label">' + label + '</div>' +
+      '<div class="idea-title">Weekend project idea</div>' +
+      '<div class="idea-desc">' + ideaText + '</div>';
+    return { label, text: ideaText };
+  }
+
+  // ============================================================
+  // MODULE: Shareable URL State
+  // ============================================================
+  function syncURL(a, b){
+    const url = new URL(window.location.href);
+    url.searchParams.set('devA', a);
+    url.searchParams.set('devB', b);
+    window.history.pushState({ devA: a, devB: b }, '', url);
+  }
+
+  function loadFromURL(){
+    const params = new URLSearchParams(window.location.search);
+    const a = params.get('devA'), b = params.get('devB');
+    if(a && b){
+      devA.value = a;
+      devB.value = b;
+      run();
+    }
+  }
+
+  window.addEventListener('popstate', (e) => {
+    const a = e.state && e.state.devA, b = e.state && e.state.devB;
+    if(a && b){ devA.value = a; devB.value = b; run(); }
+  });
+
+  // ============================================================
+  // MODULE: Web Audio Heartbeat Pulse (native Web Audio API)
+  // ============================================================
+  let audioCtx = null;
+  let heartbeatTimer = null;
+
+  function beep(freq, time, duration, gainVal){
+    if(!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, time);
+    gain.gain.linearRampToValueAtTime(gainVal, time + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(time);
+    osc.stop(time + duration + 0.02);
+  }
+
+  function startHeartbeat(){
+    try{
+      if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if(audioCtx.state === 'suspended') audioCtx.resume();
+    }catch(e){ return; }
+    runBtn.classList.add('pulsing');
+    const pulse = () => {
+      if(!audioCtx) return;
+      const t = audioCtx.currentTime;
+      beep(90, t, 0.12, 0.09);
+      beep(70, t + 0.14, 0.14, 0.06);
+    };
+    pulse();
+    heartbeatTimer = setInterval(pulse, 860);
+  }
+
+  function stopHeartbeat(){
+    runBtn.classList.remove('pulsing');
+    if(heartbeatTimer){ clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  }
+
+  // ============================================================
+  // MODULE: "Download Love Letter PDF" — a real 5-page PDF
+  // (built with jsPDF's vector text/drawing API, NOT a screenshot)
+  // ============================================================
+  function loveLine(userA, userB, sharedLangs, timingA, timingB, score){
+    const lang = sharedLangs[0];
+    const lines = [];
+    lines.push('Dear @' + userB.login + ',');
+    lines.push('');
+    lines.push('I git blame my heart for finding you —');
+    lines.push('a fork I never meant to open,');
+    lines.push('yet here we are, ' + score + '% aligned,');
+    lines.push('no rebase needed, no conflicts unresolved.');
+    lines.push('');
+    if(lang){
+      lines.push('You write in ' + lang + ', and so do I —');
+      lines.push('our syntax matched before we even tried.');
+    }else{
+      lines.push('You write in tongues I have not learned,');
+      lines.push('but a good README is worth the read.');
+    }
+    lines.push('');
+    if(timingA.label !== timingB.label && timingA.label !== 'No Data' && timingB.label !== 'No Data'){
+      lines.push('You push at ' + timingB.label.toLowerCase() + ' hours, I push at ' + timingA.label.toLowerCase() + ' —');
+      lines.push('two branches diverging, still tracking one remote.');
+    }else{
+      lines.push('Our commits land in the same quiet hours,');
+      lines.push('proof enough that timing was never our problem.');
+    }
+    lines.push('');
+    lines.push('Yours in version control,');
+    lines.push('@' + userA.login);
+    return lines;
+  }
+
+  // ---- Site-matched palette (mirrors the :root CSS variables) ----
+  const PDF_BG        = [7, 7, 9];        // --bg
+  const PDF_BG_2      = [17, 17, 19];     // --bg-2 / panel
+  const PDF_PANEL     = [20, 20, 22];     // --panel-solid
+  const PDF_INK       = [242, 237, 226];  // --ink
+  const PDF_MUTED     = [148, 141, 128];  // --muted
+  const PDF_MUTED_2   = [110, 104, 93];   // --muted-2 (lightened for print legibility)
+  const PDF_GOLD      = [201, 162, 75];   // --gold
+  const PDF_GOLD_BR   = [230, 196, 118];  // --gold-bright
+  const PDF_EMERALD   = [63, 157, 120];   // --emerald
+  const PDF_WINE      = [214, 120, 136];  // --wine (lightened for dark bg legibility)
+
+  // Paints the full-bleed dark page background + the site's double gold frame.
+  function pdfPageShell(doc){
+    doc.setFillColor(...PDF_BG);
+    doc.rect(0, 0, 210, 297, 'F');
+    // faint corner glow panels, echoing the radial gradients on the site
+    doc.setFillColor(...PDF_BG_2);
+    doc.rect(0, 0, 210, 60, 'F');
+    doc.setDrawColor(...PDF_GOLD); doc.setLineWidth(0.6);
+    doc.rect(10, 10, 190, 277);
+    doc.setDrawColor(...PDF_GOLD); doc.setLineWidth(0.15);
+    doc.rect(13.5, 13.5, 183, 270);
+  }
+
+  function pdfHeader(doc, label){
+    pdfPageShell(doc);
+    doc.setFont('courier', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...PDF_GOLD);
+    doc.text('· ' + label.toUpperCase() + ' ·', 105, 24, { align: 'center' });
+    doc.setDrawColor(...PDF_GOLD); doc.setLineWidth(0.25);
+    doc.line(20, 28, 190, 28);
+  }
+
+  function pdfFooter(doc, page, total){
+    doc.setFont('courier', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...PDF_MUTED_2);
+    doc.text('G I T H E A R T B E A T', 20, 282);
+    doc.text('DOSSIER · ' + page + ' / ' + total, 190, 282, { align: 'right' });
+  }
+
+  async function downloadLoveLetter(){
+    if(!lastRunData){
+      errbox.textContent = 'Run a comparison first — the letter needs someone to write to.';
+      errbox.style.display = 'block';
+      return;
+    }
+    if(typeof window.jspdf === 'undefined'){
+      errbox.textContent = 'PDF library failed to load — check your connection and try again.';
+      errbox.style.display = 'block';
+      return;
+    }
+    const original = downloadBtn.textContent;
+    downloadBtn.textContent = 'Writing…';
+    downloadBtn.disabled = true;
+
+    try{
+      const { userA, userB, score, vt, vs, sharedLangs, flags, timingA, timingB, conflicts, ideaLabel, ideaText } = lastRunData;
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+      const TOTAL = 5;
+      const GOLD = PDF_GOLD, GOLD_BR = PDF_GOLD_BR, INK = PDF_INK, MUTED = PDF_MUTED,
+            MUTED2 = PDF_MUTED_2, WINE = PDF_WINE, EMERALD = PDF_EMERALD;
+
+      // ---- PAGE 1: Cover ----
+      pdfPageShell(doc);
+      doc.setFont('times', 'italic'); doc.setFontSize(11); doc.setTextColor(...GOLD);
+      doc.text('G I T H E A R T B E A T', 105, 45, { align: 'center' });
+      doc.setFont('times', 'bold'); doc.setFontSize(30); doc.setTextColor(...INK);
+      doc.text('A Love Letter Between', 105, 90, { align: 'center' });
+      doc.text('Two Repositories', 105, 102, { align: 'center' });
+      doc.setFont('times', 'italic'); doc.setFontSize(14); doc.setTextColor(...MUTED);
+      doc.text('To @' + userB.login + ', from @' + userA.login, 105, 118, { align: 'center' });
+
+      doc.setFont('times', 'bold'); doc.setFontSize(70); doc.setTextColor(...GOLD_BR);
+      doc.text(String(score) + '%', 105, 175, { align: 'center' });
+      doc.setFont('courier', 'normal'); doc.setFontSize(10); doc.setTextColor(...MUTED);
+      doc.text('COMPATIBLE', 105, 184, { align: 'center' });
+
+      doc.setFont('times', 'italic'); doc.setFontSize(16); doc.setTextColor(...GOLD_BR);
+      doc.text(vt, 105, 210, { align: 'center' });
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5); doc.setTextColor(...MUTED);
+      wrapText(doc, vs, 130).forEach((l, i) => doc.text(l, 105, 219 + i * 6, { align: 'center' }));
+
+      doc.setFont('courier', 'normal'); doc.setFontSize(8); doc.setTextColor(...MUTED2);
+      doc.text('compiled with love · ' + new Date().toLocaleDateString(), 105, 265, { align: 'center' });
+      pdfFooter(doc, 1, TOTAL);
+
+      // ---- PAGE 2: The Verses ----
+      doc.addPage();
+      pdfHeader(doc, 'The Verses');
+      doc.setFont('times', 'italic'); doc.setFontSize(13); doc.setTextColor(...INK);
+      let y = 45;
+      loveLine(userA, userB, sharedLangs, timingA, timingB, score).forEach(line => {
+        if(line === ''){ y += 5; return; }
+        doc.text(line, 105, y, { align: 'center' });
+        y += 8;
+      });
+      pdfFooter(doc, 2, TOTAL);
+
+      // ---- PAGE 3: Profile Summary ----
+      doc.addPage();
+      pdfHeader(doc, 'Profile Summary');
+      [ [userA, 30], [userB, 155] ].forEach(([u, colX]) => {
+        doc.setFont('times', 'bold'); doc.setFontSize(15); doc.setTextColor(...INK);
+        doc.text(u.name || u.login, colX, 40, { maxWidth: 90 });
+        doc.setFont('courier', 'normal'); doc.setFontSize(10); doc.setTextColor(...GOLD_BR);
+        doc.text('@' + u.login, colX, 47);
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(9.5); doc.setTextColor(...MUTED);
+        wrapText(doc, u.bio || 'No bio provided.', 90).slice(0, 3).forEach((l, i) => doc.text(l, colX, 55 + i * 5));
+        const stats = [
+          ['Repositories', u.public_repos], ['Followers', u.followers],
+          ['Following', u.following], ['Hireable', u.hireable ? 'Yes' : 'No'],
+          ['Joined', new Date(u.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short' })]
+        ];
+        let sy = 77;
+        stats.forEach(([label, val]) => {
+          doc.setFont('courier', 'normal'); doc.setFontSize(9); doc.setTextColor(...MUTED2);
+          doc.text(label.toUpperCase(), colX, sy);
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(...INK);
+          doc.text(String(val), colX, sy + 5.5);
+          sy += 15;
+        });
+      });
+      doc.setDrawColor(...GOLD); doc.setLineWidth(0.2);
+      doc.line(105, 35, 105, 155);
+      doc.setFont('times', 'italic'); doc.setFontSize(11); doc.setTextColor(...GOLD_BR);
+      doc.text('Shared languages: ' + (sharedLangs.length ? sharedLangs.slice(0, 5).join(', ') : 'none yet'), 105, 180, { align: 'center', maxWidth: 160 });
+      pdfFooter(doc, 3, TOTAL);
+
+      // ---- PAGE 4: Personality & Promises ----
+      doc.addPage();
+      pdfHeader(doc, 'Personality & Promises');
+      doc.setFont('times', 'bold'); doc.setFontSize(13); doc.setTextColor(...INK);
+      doc.text('Who you are, code-side', 20, 38);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...MUTED);
+      doc.text('@' + userA.login + ':  ' + timingA.label + '   ·   @' + userB.login + ':  ' + timingB.label, 20, 46);
+
+      let fy = 60;
+      doc.setFont('times', 'bold'); doc.setFontSize(13); doc.setTextColor(...EMERALD);
+      doc.text('Promises I make to you', 20, fy); fy += 8;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...INK);
+      (flags.green.length ? flags.green : ['Nothing notable here — yet.']).forEach(f => {
+        wrapText(doc, '♥ ' + f, 170).forEach(l => { doc.text(l, 22, fy); fy += 6; });
+        fy += 2;
+      });
+
+      fy += 6;
+      doc.setFont('times', 'bold'); doc.setFontSize(13); doc.setTextColor(...WINE);
+      doc.text('Things we should talk about', 20, fy); fy += 8;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...INK);
+      (flags.red.length ? flags.red : ['Nothing notable here — smooth sailing.']).forEach(f => {
+        wrapText(doc, '⚠ ' + f, 170).forEach(l => { doc.text(l, 22, fy); fy += 6; });
+        fy += 2;
+      });
+      pdfFooter(doc, 4, TOTAL);
+
+      // ---- PAGE 5: Conflicts, Our Project, Closing ----
+      doc.addPage();
+      pdfHeader(doc, 'What Comes Next');
+      doc.setFont('times', 'bold'); doc.setFontSize(13); doc.setTextColor(...INK);
+      doc.text('Things we\'ll probably argue about (lovingly)', 20, 38);
+      let cy = 48;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...MUTED);
+      conflicts.forEach(([nameA, sideA, nameB, sideB]) => {
+        wrapText(doc, '@' + nameA + ' fights for ' + sideA + ', @' + nameB + ' stands by ' + sideB + '.', 170)
+          .forEach(l => { doc.text(l, 22, cy); cy += 6; });
+        cy += 2;
+      });
+
+      cy += 8;
+      doc.setFont('times', 'bold'); doc.setFontSize(13); doc.setTextColor(...GOLD_BR);
+      doc.text('Our first project together', 20, cy); cy += 8;
+      doc.setFont('helvetica', 'italic'); doc.setFontSize(10.5); doc.setTextColor(...INK);
+      doc.text(ideaLabel, 20, cy); cy += 7;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...MUTED);
+      wrapText(doc, ideaText, 170).forEach(l => { doc.text(l, 20, cy); cy += 6; });
+
+      doc.setFont('times', 'italic'); doc.setFontSize(12); doc.setTextColor(...MUTED);
+      doc.text('Forever pull-requesting to your heart,', 105, 250, { align: 'center' });
+      doc.setFont('times', 'bold'); doc.setFontSize(14); doc.setTextColor(...GOLD_BR);
+      doc.text('@' + userA.login + '  ♥  @' + userB.login, 105, 260, { align: 'center' });
+      pdfFooter(doc, 5, TOTAL);
+
+      doc.save('githeartbeat-love-letter-' + userA.login + '-' + userB.login + '.pdf');
+    }catch(e){
+      errbox.textContent = 'Could not generate the love letter PDF.';
+      errbox.style.display = 'block';
+    }finally{
+      downloadBtn.textContent = original;
+      downloadBtn.disabled = false;
+    }
+  }
+
+  function wrapText(doc, text, maxWidth){
+    return doc.splitTextToSize(text, maxWidth);
+  }
+
+  // ============================================================
+  // MODULE: Ambient floating hearts + typewriter verdict reveal
+  // ============================================================
+  const heartsField = $('heartsField');
+  function spawnHeart(intensity){
+    if(!heartsField) return;
+    const el = document.createElement('span');
+    el.className = 'floating-heart';
+    el.textContent = Math.random() > 0.5 ? '♥' : '♡';
+    const size = 10 + Math.random() * 16;
+    const left = Math.random() * 100;
+    const dur = 7 + Math.random() * 6;
+    const drift = (Math.random() * 60 - 30).toFixed(0) + 'px';
+    const colors = ['#c9a24b', '#e6c476', '#a3495a'];
+    el.style.left = left + 'vw';
+    el.style.fontSize = size + 'px';
+    el.style.color = colors[Math.floor(Math.random() * colors.length)];
+    el.style.setProperty('--drift', drift);
+    el.style.setProperty('--hmax', intensity || 0.5);
+    el.style.animationDuration = dur + 's';
+    heartsField.appendChild(el);
+    setTimeout(() => el.remove(), dur * 1000 + 200);
+  }
+  let ambientHeartsTimer = setInterval(() => spawnHeart(0.35), 2600);
+  spawnHeart(0.35);
+
+  function typewriteVerdict(text){
+    verdictSub.classList.add('typing');
+    verdictSub.textContent = '';
+    let i = 0;
+    const step = () => {
+      verdictSub.textContent = text.slice(0, i);
+      i++;
+      if(i <= text.length){ setTimeout(step, 14); }
+      else { verdictSub.classList.remove('typing'); }
+    };
+    step();
+  }
+
+  // ============================================================
+  // MODULE: Confetti burst + success chime (high-score celebration)
+  // ============================================================
+  function spawnConfettiBurst(){
+    const colors = ['#c9a24b', '#e6c476', '#3f9d78', '#a3495a', '#8fd6fb'];
+    const symbols = ['🎉', '💖', '✨', '🎊', '💫'];
+    for(let i = 0; i < 26; i++){
+      const el = document.createElement('span');
+      el.className = 'confetti-piece';
+      el.textContent = symbols[Math.floor(Math.random() * symbols.length)];
+      el.style.left = (Math.random() * 100) + 'vw';
+      el.style.fontSize = (12 + Math.random() * 14) + 'px';
+      el.style.color = colors[Math.floor(Math.random() * colors.length)];
+      const dur = 2.2 + Math.random() * 1.6;
+      el.style.animationDuration = dur + 's';
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), dur * 1000 + 200);
+    }
+  }
+
+  function playChime(){
+    try{
+      if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if(audioCtx.state === 'suspended') audioCtx.resume();
+    }catch(e){ return; }
+    const t = audioCtx.currentTime;
+    [523.25, 659.25, 783.99].forEach((freq, i) => beep(freq, t + i * 0.09, 0.35, 0.06));
+  }
+
+  // ============================================================
+  // MODULE: Romantic / Roast mode toggle
+  // ============================================================
+  let roastMode = false;
+  function setMode(roast){
+    roastMode = roast;
+    modeSwitch.classList.toggle('roast', roast);
+    modeSwitch.setAttribute('aria-checked', String(roast));
+    modeLabelLeft.classList.toggle('active', !roast);
+    modeLabelRight.classList.toggle('active', roast);
+    if(lastRunData){
+      const { score, flags } = lastRunData;
+      const [vt, vs] = roastMode ? roastVerdictFor(score) : verdictFor(score);
+      verdictTitle.textContent = vt;
+      typewriteVerdict(vs);
+      renderFlags(flags, roastMode);
+    }
+  }
+  modeSwitch.addEventListener('click', () => setMode(!roastMode));
+  modeSwitch.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); setMode(!roastMode); }
+  });
+
+  // ============================================================
+  // MODULE: Rotating witty loading messages during analysis
+  // ============================================================
+  const LOADING_MESSAGES = [
+    'Cloning hearts…', 'Resolving merge of feelings…', 'Running git blame on the past…',
+    'Checking for merge conflicts…', 'Fetching commit history…', 'Calculating chemistry…',
+    'Pulling the latest vibes…', 'Compiling compatibility…'
+  ];
+  let loadingMsgTimer = null;
+  function startLoadingMessages(){
+    let i = 0;
+    runLabel.textContent = LOADING_MESSAGES[0];
+    loadingMsgTimer = setInterval(() => {
+      i = (i + 1) % LOADING_MESSAGES.length;
+      runLabel.textContent = LOADING_MESSAGES[i];
+    }, 750);
+  }
+  function stopLoadingMessages(){
+    if(loadingMsgTimer){ clearInterval(loadingMsgTimer); loadingMsgTimer = null; }
+    runLabel.textContent = 'Analyse Compatibility';
+  }
+
+  // ============================================================
+  // MODULE: Share to X
+  // ============================================================
+  function shareToX(){
+    if(!lastRunData){
+      errbox.textContent = 'Run a comparison first — nothing to share yet.';
+      errbox.style.display = 'block';
+      return;
+    }
+    const { userA, userB, score, vt } = lastRunData;
+    const cleanVt = vt.replace(/[^\w\s]/g, '').trim();
+    const text = 'GitHeartbeat says @' + userA.login + ' + @' + userB.login + ' are ' + score + '% compatible — ' + cleanVt + '. Check your own match:';
+    const intent = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent(window.location.href);
+    window.open(intent, '_blank', 'noopener,noreferrer');
+  }
+
+  let lastRunData = null;
+  let lastResultText = '';
+
+  async function run(){
+    const a = devA.value.trim().replace(/^@/, '');
+    const b = devB.value.trim().replace(/^@/, '');
+    errbox.style.display = 'none';
+    results.classList.remove('show');
+
+    if(!a || !b){
+      errbox.textContent = 'Enter both GitHub usernames to run the reading.';
+      errbox.style.display = 'block';
+      return;
+    }
+
+    runBtn.disabled = true;
+    startLoadingMessages();
+    startHeartbeat();
+
+    try{
+      const [userA, userB] = await Promise.all([fetchUser(a), fetchUser(b)]);
+      const [repoDataA, repoDataB, pushA, pushB] = await Promise.all([
+        fetchRepoDetails(a), fetchRepoDetails(b), fetchPushEvents(a), fetchPushEvents(b)
+      ]);
+
+      const langsA = repoDataA.langs, langsB = repoDataB.langs;
+      const setA = new Set(langsA.keys()), setB = new Set(langsB.keys());
+
+      const langScore = jaccard(setA, setB);
+      const repoScore = closeness(userA.public_repos, userB.public_repos);
+      const followerScore = closeness(userA.followers, userB.followers);
+      const ageScore = closeness(yearsSince(userA.created_at), yearsSince(userB.created_at));
+      
+      const countSumA = Object.values(monthlyCommitCounts(pushA)).reduce((s,n)=>s+n,0);
+      const countSumB = Object.values(monthlyCommitCounts(pushB)).reduce((s,n)=>s+n,0);
+      const activityScore = closeness(countSumA, countSumB);
+
+      const hireBonus = (userA.hireable && userB.hireable) ? 0.08 : 0;
+
+      const raw = (langScore * 0.35) + (repoScore * 0.20) + (followerScore * 0.20) + (ageScore * 0.15) + (activityScore * 0.10) + hireBonus;
+      const score = Math.max(3, Math.min(100, Math.round(raw * 100)));
+
+      animateCountUp(score);
+      animateGauge(score);
+      const [vtRomantic, vsRomantic] = verdictFor(score);
+      const [vt, vs] = roastMode ? roastVerdictFor(score) : [vtRomantic, vsRomantic];
+      verdictTitle.textContent = vt;
+      typewriteVerdict(vs);
+
+      dossierEl.innerHTML = '';
+      dossierEl.appendChild(dossierCard(userA, 'a'));
+      dossierEl.appendChild(dossierCard(userB, 'b'));
+
+      const sharedLangs = [...setA].filter(l => setB.has(l));
+      ledgerEl.innerHTML = '';
+      const head = document.createElement('div');
+      head.className = 'ledger-row head';
+      head.innerHTML = '<div>Metric</div><div>@' + userA.login + '</div><div>@' + userB.login + '</div><div></div>';
+      ledgerEl.appendChild(head);
+
+      const rowsData = [
+        ['Shared languages', sharedLangs.length ? sharedLangs.slice(0,4).join(', ') : '—', sharedLangs.length ? sharedLangs.slice(0,4).join(', ') : '—', sharedLangs.length ? '+' : '~'],
+        ['Public repositories', userA.public_repos, userB.public_repos, repoScore > 0.6 ? '+' : '-'],
+        ['Followers', userA.followers, userB.followers, followerScore > 0.6 ? '+' : '-'],
+        ['Following', userA.following, userB.following, closeness(userA.following, userB.following) > 0.6 ? '+' : '~'],
+        ['Account age', yearsSince(userA.created_at).toFixed(1) + ' yrs', yearsSince(userB.created_at).toFixed(1) + ' yrs', ageScore > 0.6 ? '+' : '-'],
+        ['Hireable', userA.hireable ? 'Yes' : 'No', userB.hireable ? 'Yes' : 'No', (userA.hireable && userB.hireable) ? '+' : '~'],
+        ['Recent commits (6 mo)', countSumA, countSumB, activityScore > 0.6 ? '+' : '-'],
+      ];
+
+      rowsData.forEach((r, i) => ledgerEl.appendChild(ledgerRow(r[0], r[1], r[2], r[3], i)));
+
+      const monthlyA = monthlyCommitCounts(pushA);
+      const monthlyB = monthlyCommitCounts(pushB);
+      
+      renderAnalyticsCharts(monthlyA, monthlyB, userA, userB, langsA, langsB, {
+        langScore, repoScore, followerScore, ageScore, activityScore
+      });
+
+      const timingA = commitTimingProfile(pushA);
+      const timingB = commitTimingProfile(pushB);
+      renderPersonality(userA, userB, langsA, langsB, pushA, pushB, monthlyA, monthlyB);
+
+      const statsA = starForkRatio(repoDataA.repos);
+      const statsB = starForkRatio(repoDataB.repos);
+      const flags = generateFlags(userA, userB, sharedLangs, statsA, statsB, monthlyA, monthlyB, timingA, timingB);
+      renderFlags(flags, roastMode);
+
+      const conflicts = renderMergeConflicts(userA.login, userB.login);
+      const idea = renderProjectIdea(sharedLangs);
+
+      syncURL(a, b);
+
+      lastRunData = {
+        userA, userB, score, vt: vtRomantic, vs: vsRomantic, sharedLangs, flags, timingA, timingB,
+        conflicts, ideaLabel: idea.label, ideaText: idea.text
+      };
+      lastResultText = 'GitHeartbeat: @' + userA.login + ' + @' + userB.login + ' = ' + score + '% compatible — ' + vtRomantic + '.';
+
+      results.classList.add('show');
+      results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      for(let i = 0; i < 10; i++) setTimeout(() => spawnHeart(0.7), i * 90);
+      if(score >= 75){ spawnConfettiBurst(); playChime(); }
+    }catch(err){
+      errbox.textContent = err.message || 'Something went wrong while fetching GitHub data.';
+      errbox.style.display = 'block';
+    }finally{
+      runBtn.disabled = false;
+      stopLoadingMessages();
+      stopHeartbeat();
+    }
+  }
+
+  // --- Autocomplete setup ---
+  function debounce(fn, wait){
+    let t;
+    return function(...args){
+      clearTimeout(t);
+      t = setTimeout(() => fn.apply(this, args), wait);
+    };
+  }
+
+  function setupAutocomplete(inputEl, listEl){
+    let items = [];
+    let activeIndex = -1;
+    let controller = null;
+
+    function close(){
+      listEl.classList.remove('show');
+      listEl.innerHTML = '';
+      items = [];
+      activeIndex = -1;
+    }
+
+    function renderItems(users){
+      items = users;
+      activeIndex = -1;
+      if(users.length === 0){
+        listEl.innerHTML = '<div class="suggest-empty">No matching developers 💔</div>';
+        listEl.classList.add('show');
+        return;
+      }
+      listEl.innerHTML = users.map((u, i) =>
+        '<div class="suggest-item" data-index="' + i + '" role="option">' +
+          '<img src="' + u.avatar_url + '&s=48" alt="" loading="lazy">' +
+          '<span class="sname">@' + u.login + '</span>' +
+          '<span class="stype">' + (u.type === 'Organization' ? 'org' : 'user') + '</span>' +
+        '</div>'
+      ).join('');
+      listEl.classList.add('show');
+      listEl.querySelectorAll('.suggest-item').forEach(el => {
+        el.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          const idx = Number(el.getAttribute('data-index'));
+          inputEl.value = items[idx].login;
+          close();
+        });
+      });
+    }
+
+    function highlight(idx){
+      const els = listEl.querySelectorAll('.suggest-item');
+      els.forEach(el => el.classList.remove('active'));
+      if(idx >= 0 && els[idx]){
+        els[idx].classList.add('active');
+        els[idx].scrollIntoView({ block: 'nearest' });
+      }
+    }
+
+    const search = debounce(async (q) => {
+      if(!q || q.length < 2){ close(); return; }
+      if(controller) controller.abort();
+      controller = new AbortController();
+      try{
+        const res = await fetch('https://api.github.com/search/users?q=' + encodeURIComponent(q) + '+in:login&per_page=6', { signal: controller.signal });
+        if(!res.ok){ close(); return; }
+        const data = await res.json();
+        renderItems((data.items || []).slice(0, 6));
+      }catch(e){}
+    }, 300);
+
+    inputEl.addEventListener('input', () => search(inputEl.value.trim().replace(/^@/, '')));
+
+    inputEl.addEventListener('keydown', (e) => {
+      if(!listEl.classList.contains('show')) return;
+      if(e.key === 'ArrowDown'){
+        e.preventDefault();
+        activeIndex = Math.min(items.length - 1, activeIndex + 1);
+        highlight(activeIndex);
+      }else if(e.key === 'ArrowUp'){
+        e.preventDefault();
+        activeIndex = Math.max(0, activeIndex - 1);
+        highlight(activeIndex);
+      }else if(e.key === 'Enter'){
+        if(activeIndex >= 0 && items[activeIndex]){
+          e.preventDefault();
+          inputEl.value = items[activeIndex].login;
+          close();
+        }
+      }else if(e.key === 'Escape'){
+        close();
+      }
+    });
+
+    inputEl.addEventListener('blur', () => setTimeout(close, 120));
+    inputEl.addEventListener('focus', () => { if(items.length) listEl.classList.add('show'); });
+  }
+
+  setupAutocomplete(devA, suggestA);
+  setupAutocomplete(devB, suggestB);
+
+  copyBtn.addEventListener('click', async () => {
+    if(!lastResultText) return;
+    try{
+      await navigator.clipboard.writeText(lastResultText);
+      copyBtn.textContent = 'Copied ✓';
+      copyBtn.classList.add('copied');
+      setTimeout(() => { copyBtn.textContent = 'Copy result'; copyBtn.classList.remove('copied'); }, 1800);
+    }catch(e){}
+  });
+
+  againBtn.addEventListener('click', () => {
+    results.classList.remove('show');
+    devA.value = ''; devB.value = '';
+    devA.focus();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  runBtn.addEventListener('click', run);
+  [devA, devB].forEach(inp => inp.addEventListener('keydown', e => { if(e.key === 'Enter') run(); }));
+
+  downloadBtn.addEventListener('click', downloadLoveLetter);
+  shareBtn.addEventListener('click', shareToX);
+
+  document.querySelectorAll('.preset-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      devA.value = chip.getAttribute('data-a');
+      devB.value = chip.getAttribute('data-b');
+      run();
+    });
+  });
+
+  // Auto-run on load if ?devA=...&devB=... is present (shareable state)
+  loadFromURL();
+})();
+</script>
+</body>
+</html>
